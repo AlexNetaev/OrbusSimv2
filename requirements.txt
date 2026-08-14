@@ -1,0 +1,21 @@
+# Core LLM client - talks to a local Ollama server (default: http://localhost:11434)
+ollama>=0.3.0
+
+# Schema validation / structured-output enforcement for LLM responses
+pydantic>=2.7.0
+
+# Loads environment variables (e.g. OLLAMA_HOST, model overrides) from a .env file
+python-dotenv>=1.0.1
+
+# Optional but recommended: YAML support is stdlib-adjacent but not stdlib.
+# hardware_limits.yaml is read/written as YAML in this project.
+pyyaml>=6.0.1
+
+# UI dashboard (Step 7): NiceGUI powers the passive-observer web dashboard
+# (src/ui_dashboard.py); plotly renders the Lab Journal's interactive
+# simulated-vs-actual overlay plots. psutil (used for the hardware load
+# indicators) is a common preinstalled dependency but is listed explicitly
+# here for completeness in case it isn't already present.
+nicegui>=1.4.0
+plotly>=5.20.0
+psutil>=5.9.0

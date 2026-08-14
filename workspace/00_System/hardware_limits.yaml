@@ -1,0 +1,63 @@
+# Hardware Limits for OrbusSim Dummy V2
+# Fenton Reaction / Fluorescence Kinetics System
+
+mixing_speed_rpm:
+  min: 0
+  max: 5000
+
+mixing_time_s:
+  min: 0.0
+  max: 3600.0
+
+target_temperature_c:
+  min: 0.0
+  max: 99.0  # Harte Hardware-Grenze des Heizers
+
+heating_time_s:
+  min: 0.0
+  max: 3600.0
+
+measurement_interval_ms:
+  min: 50
+  max: 5000
+
+fluorescence_duration_s:
+  min: 5.0
+  max: 600.0  # Watchdog Timer
+
+excitation_wavelength_nm:
+  min: 200.0
+  max: 900.0
+
+emission_wavelength_nm:
+  min: 200.0
+  max: 1000.0
+
+# Reagent concentration limits (in mM)
+reagent_concentration_mm:
+  ascorbic_acid:
+    min: 0.0
+    max: 100.0
+  fecl3:
+    min: 0.0
+    max: 10.0
+  h2o2:
+    min: 0.0
+    max: 200.0
+  fluorescein:
+    min: 0.0
+    max: 0.05  # 50 µM max to avoid inner filter
+  phosphate_buffer:
+    min: 0.0
+    max: 200.0
+
+# Reagent volume limits (in µL)
+reagent_volume_ul:
+  min: 0.0
+  max: 5000.0
+
+# Sample temperature safety limit
+sample_temperature_max_c: 75.0  # Fluorescein degradation threshold
+
+# Photobleaching constraint
+max_bleaching_percent: 20.0  # Signal loss should stay below this
