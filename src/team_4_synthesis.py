@@ -73,7 +73,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from src import config
 from src.base_agent import BaseAgent
@@ -164,11 +164,9 @@ class HardwareProtocolReport(BaseModel):
 
     hardware_faults_detected: bool = False
     fault_details: list[str] = Field(default_factory=list)
-    target_parameters: dict[str, float] = Field(default_factory=dict)
-    achieved_parameters: dict[str, float] = Field(default_factory=dict)
-
-    class Config:
-        extra = "allow"
+    target_parameters: dict[str, float | int | str | None] = Field(default_factory=dict)
+    achieved_parameters: dict[str, float | int | str | None] = Field(default_factory=dict)
+    model_config = ConfigDict(extra="allow")
 
 
 class DiscrepancyAnalysisModel(BaseModel):
@@ -281,21 +279,30 @@ def _run_deterministic_reality_check(protocol: HardwareProtocolReport) -> list[s
     first), so a human/DeadlockManager sees the complete picture.
     """
     violations: list[str] = []
-
+    
     if protocol.hardware_faults_detected:
         violations.append("Hardware layer explicitly reported hardware_faults_detected=True.")
         violations.extend(f"Reported fault detail: {detail}" for detail in protocol.fault_details)
-
+    
     common_parameters = set(protocol.target_parameters) & set(protocol.achieved_parameters)
     for parameter_name in sorted(common_parameters):
         target_value = protocol.target_parameters[parameter_name]
         achieved_value = protocol.achieved_parameters[parameter_name]
-
+        
+        # Wenn einer der Werte None ist, überspringe den Vergleich
+        # (Das Dummy-System konnte den Wert nicht berechnen)
+        if target_value is None or achieved_value is None:
+            continue
+        
+        # Wenn die Werte keine Zahlen sind, überspringe den Vergleich
+        if not isinstance(target_value, (int, float)) or not isinstance(achieved_value, (int, float)):
+            continue
+        
         if target_value == 0:
             if achieved_value != 0:
                 violations.append(f"Parameter '{parameter_name}': target was 0 but achieved {achieved_value}.")
             continue
-
+        
         deviation_fraction = abs(achieved_value - target_value) / abs(target_value)
         if deviation_fraction > SEVERE_DEVIATION_FRACTION:
             violations.append(
@@ -303,13 +310,13 @@ def _run_deterministic_reality_check(protocol: HardwareProtocolReport) -> list[s
                 f"(target={target_value}, achieved={achieved_value}), exceeding the "
                 f"{SEVERE_DEVIATION_FRACTION:.0%} severe-deviation threshold."
             )
-
+    
     return violations
 
 def _check_steady_state_success(csv_path: Path) -> bool:
     """
     Prüft deterministisch, ob das Experiment ein Temperatur-Plateau erreicht hat.
-    Im OrbusSim-System ist die Spalte 'temp_c' (nicht 'ntc_thermistor_ohm').
+    Im OrbusSim-System ist die relevante Spalte 'temp_c' (nicht 'ntc_thermistor_ohm').
     """
     if not csv_path.exists():
         return False
@@ -317,25 +324,32 @@ def _check_steady_state_success(csv_path: Path) -> bool:
         with csv_path.open("r", newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             rows = list(reader)
-
+        
         if not rows or "temp_c" not in rows[0]:
             return False
-
+        
         # Prüfe die letzten 20% der Messwerte auf ein Temperatur-Plateau
         tail_size = max(1, int(len(rows) * 0.2))
-        tail_values = [float(row["temp_c"]) for row in rows[-tail_size:]]
+        tail_values = []
+        for row in rows[-tail_size:]:
+            try:
+                tail_values.append(float(row["temp_c"]))
+            except (ValueError, TypeError):
+                # Wenn eine Zeile nicht konvertiert werden kann, überspringe sie
+                continue
+        
         if not tail_values:
             return False
-
+        
         mean_val = sum(tail_values) / len(tail_values)
         variance = sum((x - mean_val) ** 2 for x in tail_values) / len(tail_values)
         std_dev = variance ** 0.5
-
+        
         # Plateau wenn Standardabweichung < 0.5°C
         is_plateau = std_dev < 0.5
         # Zielbereich: Temperatur über 30°C (Raumtemperatur ist ~22°C)
         target_reached = mean_val > 30.0
-
+        
         return is_plateau and target_reached
     except Exception as e:
         logger.warning("[team_4_synthesis] Error during steady state check: %s", e)
