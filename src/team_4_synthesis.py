@@ -308,8 +308,8 @@ def _run_deterministic_reality_check(protocol: HardwareProtocolReport) -> list[s
 
 def _check_steady_state_success(csv_path: Path) -> bool:
     """
-    Prüft deterministisch, ob das Experiment das Ziel erreicht hat (Plateau-Bildung).
-    Wenn ja, darf der LLM dies NICHT als Anomalie flaggen.
+    Prüft deterministisch, ob das Experiment ein Temperatur-Plateau erreicht hat.
+    Im OrbusSim-System ist die Spalte 'temp_c' (nicht 'ntc_thermistor_ohm').
     """
     if not csv_path.exists():
         return False
@@ -318,13 +318,12 @@ def _check_steady_state_success(csv_path: Path) -> bool:
             reader = csv.DictReader(f)
             rows = list(reader)
 
-        if not rows or "ntc_thermistor_ohm" not in rows[0]:
+        if not rows or "temp_c" not in rows[0]:
             return False
 
-        # Prüfe die letzten 20% der Messwerte auf ein Plateau (Standardabweichung fast 0)
+        # Prüfe die letzten 20% der Messwerte auf ein Temperatur-Plateau
         tail_size = max(1, int(len(rows) * 0.2))
-        tail_values = [float(row["ntc_thermistor_ohm"]) for row in rows[-tail_size:]]
-
+        tail_values = [float(row["temp_c"]) for row in rows[-tail_size:]]
         if not tail_values:
             return False
 
@@ -332,12 +331,10 @@ def _check_steady_state_success(csv_path: Path) -> bool:
         variance = sum((x - mean_val) ** 2 for x in tail_values) / len(tail_values)
         std_dev = variance ** 0.5
 
-        # Wenn die Standardabweichung extrem klein ist, haben wir ein Plateau (Steady State)
-        is_plateau = std_dev < 5.0
-
-        # Prüfe, ob das Plateau im Zielbereich liegt (z.B. ~2486 Ohm für 60°C)
-        # Wir nehmen an, dass ein Wert unter 3000 Ohm den Zielbereich markiert
-        target_reached = mean_val < 3000.0
+        # Plateau wenn Standardabweichung < 0.5°C
+        is_plateau = std_dev < 0.5
+        # Zielbereich: Temperatur über 30°C (Raumtemperatur ist ~22°C)
+        target_reached = mean_val > 30.0
 
         return is_plateau and target_reached
     except Exception as e:
@@ -498,8 +495,11 @@ class DataAnalyst(BaseAgent):
             steady_state_note = (
                 "\n*** CRITICAL SYSTEM NOTE ***\n"
                 "Our deterministic sensors confirm the system has reached the EXPECTED TARGET STEADY STATE "
-                "(e.g. target temperature plateau). The plateau in the measurement data is a SUCCESS, "
-                "NOT an anomaly. Do NOT flag the thermal or chemical steady state as an anomaly.\n"
+                "(temperature plateau at target value). The plateau in the measurement data is a SUCCESS, "
+                "NOT an anomaly. Do NOT flag the thermal steady state as an anomaly.\n"
+                "The measurement.csv contains columns: time_ms, temp_c, fluorescence_raw_au.\n"
+                "A decreasing fluorescence_raw_au over time is EXPECTED behavior for this experiment "
+                "(pH drops, causing fluorescein fluorescence to decrease). This is NOT an anomaly.\n"
                 "******************************\n"
             )
 
@@ -875,25 +875,21 @@ class Gatekeeper(BaseAgent):
             "target was achieved",
             "target reached",
             "target successfully achieved",
-            "target curing threshold was successfully achieved",
-            "target threshold was achieved",
-            "target curing state was successfully achieved",
-            "target curing state was achieved",
+            "target ph range was achieved",
+            "target ph was reached",
+            "target fluorescence plateau was reached",
+            "fluorescence kinetics reached steady state",
             "no meaningful discrepancy",
             "no scientific discrepancy",
             "no discrepancy to explain",
-            "target goals",
-            "curing_progress=1.0",
             "no new hypothesis or parameter change",
             "no changes are being proposed",
             "no changes to the parameters",
             "successfully achieved the target",
             "successfully reached the target",
-            "target state and no new hypothesis",
             "physical goal has been met",
             "physical experiment was successful",
         ]
-
         calibration_keywords = [
             "re-tune the simulation", "retune the simulation",
             "align with physical", "align with the observed",
@@ -903,16 +899,10 @@ class Gatekeeper(BaseAgent):
             "simulation-to-hardware mismatch", "simulation inaccuracy",
             "re-tune the simulation parameters", "tune the simulation"
         ]
-
         reasoning_lower = reasoning.lower()
-
-        # Wenn Kalibrierungs-Keywords vorkommen -> Shortcut zündet sofort!
         if any(kw in reasoning_lower for kw in calibration_keywords):
             return True
-
         matches = sum(1 for kw in success_keywords if kw in reasoning_lower)
-        # Mindestens 2 Schlüsselwörter müssen matchen, um ein Erfolgssignal
-        # zu erkennen (verhindert False Positives durch einzelne Wörter).
         return matches >= 2
 
     def _read_copilot_feedback_if_present(self, analysis_dir: Path) -> str:

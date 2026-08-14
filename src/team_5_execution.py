@@ -116,92 +116,31 @@ class HardwareSafetyException(Exception):
 # --------------------------------------------------------------------------- #
 
 class ReagentDose(BaseModel):
-    """A single reagent's dosing instruction for Station 1."""
+    """Ein einzelnes Reagenz mit Name, Volumen und Konzentration."""
+    reagent_name: str = Field(..., min_length=1, description="Name des Reagenz.")
+    volume_ul: float = Field(..., ge=0, description="Volumen des Reagenz in Mikrolitern (µL).")
+    concentration_mm: float = Field(..., ge=0, description="Konzentration des Reagenz in Millimolar (mM).")
 
-    reagent_name: str = Field(..., min_length=1, description="Name/identifier of the reagent to dose.")
-    volume_ml: float = Field(..., ge=0, description="Volume of this reagent to dispense, in mL.")
-
-
-class Station1Reagents(BaseModel):
-    """Station 1: Reagents - dosing and preparation."""
-
-    reagents: list[ReagentDose] = Field(
-        ..., min_length=1, description="One or more reagent doses to prepare for this run."
-    )
-    preparation_notes: str = Field(
-        default="", description="Any additional preparation instructions (order of addition, etc.)."
-    )
-
-
-class Station2Process(BaseModel):
-    """Station 2: Process - mixing and heating."""
-
-    mixing_speed_rpm: float = Field(..., ge=0, description="Mixing speed, in RPM.")
-    mixing_time_s: float = Field(..., ge=0, description="Mixing duration, in seconds.")
-    target_temperature_c: float = Field(..., description="Target process temperature, in degrees Celsius.")
-    heating_time_s: float = Field(..., ge=0, description="Duration to hold/ramp to target temperature, in seconds.")
-
-
-class Station3Analytics(BaseModel):
-    """Station 3: Analytics - measurement targets."""
-
-    measurement_type: str = Field(
-        ..., min_length=1, description="What kind of measurement to take (e.g. 'temperature', 'UV-Vis')."
-    )
-    target_parameters: dict[str, float] = Field(
-        default_factory=dict, description="Named target values this measurement should be compared against."
-    )
-    sampling_interval_s: float = Field(..., ge=0, description="Interval between measurement samples, in seconds.")
-
-
-class Station4Cleanup(BaseModel):
-    """
-    Station 4: Cleanup. `cleanup_routine` is explicitly required and
-    non-empty at BOTH the schema level (here) and again, independently, by
-    SemanticSafetyAgent's deterministic check - see that agent's docstring
-    for why the check is deliberately duplicated rather than trusted to
-    schema validation alone.
-    """
-
-    cleanup_routine: str = Field(
-        ..., min_length=1, description="MUST be a non-empty description of the post-run cleanup procedure."
-    )
-    purge_time_s: float = Field(default=0.0, ge=0, description="Purge/rinse duration, in seconds.")
-
-    @field_validator("cleanup_routine")
-    @classmethod
-    def _cleanup_routine_not_blank(cls, value: str) -> str:
-        """
-        Reject whitespace-only strings, not just the empty string -
-        `min_length=1` alone would accept `" "` as satisfying the length
-        constraint, which is not a real cleanup routine.
-        """
-        if not value.strip():
-            raise ValueError("cleanup_routine must not be empty or whitespace-only.")
-        return value
-
-
-class ReagentVolumesModel(BaseModel):
-    base_resin_A: float = Field(..., ge=0, description="Volume of base resin A in uL.")
-    photoinitiator_B: float = Field(..., ge=0, description="Volume of photoinitiator B in uL.")
-    additive_C: float = Field(..., ge=0, description="Volume of additive C in uL.")
 
 class ExperimentParametersModel(BaseModel):
-    reagents: ReagentVolumesModel
-    mixing_speed_rpm: float = Field(..., ge=0, description="Mixing speed in RPM.")
-    mixing_time_s: float = Field(..., ge=0, description="Mixing duration in seconds.")
-    target_temperature_c: float = Field(..., description="Target temperature in Celsius.")
-    target_uv_intensity_mw_cm2: float = Field(..., ge=0, description="Target UV intensity in mW/cm^2.")
-    exposure_time_s: float = Field(..., ge=0, description="UV exposure duration in seconds.")
+    """Parameter für das OrbusSim Dummy V2 Experiment."""
+    reagents: list[ReagentDose] = Field(..., min_length=5, max_length=5, description="EXAKT 5 Reagenzien: ascorbic_acid, fecl3, h2o2, fluorescein, phosphate_buffer.")
+    mixing_speed_rpm: float = Field(..., ge=0, description="Mischgeschwindigkeit in RPM.")
+    mixing_time_s: float = Field(..., ge=0, description="Mischdauer in Sekunden.")
+    target_temperature_c: float = Field(..., description="Zieltemperatur in Grad Celsius.")
+    heating_time_s: float = Field(..., ge=0, description="Aufheizdauer in Sekunden.")
+    measurement_interval_ms: int = Field(..., ge=50, le=5000, description="Messintervall in Millisekunden.")
+    fluorescence_duration_s: float = Field(..., ge=5, le=600, description="Fluoreszenzmessdauer in Sekunden.")
+    excitation_wavelength_nm: float = Field(default=490, description="Anregungswellenlänge in Nanometern.")
+    emission_wavelength_nm: float = Field(default=520, description="Emissionswellenlänge in Nanometern.")
+
 
 class ExperimentJobModel(BaseModel):
-    """
-    Strict schema the LLM must populate to match the hardware simulator.
-    """
+    """Striktes Schema für den OrbusSim Dummy V2 Job."""
     parameters: ExperimentParametersModel
     station_4_action: str = Field(
         ..., min_length=1,
-        description="MUST be a non-empty action like 'CLEAN', 'UV_CURE', or 'EJECT'."
+        description="MUST be 'FLUORESCENCE' for the OrbusSim system."
     )
 
 
@@ -327,13 +266,14 @@ class MachinePlanner(BaseAgent):
         )
         system_prompt = (
             "You are the Machine Planner for an autonomous self-driving laboratory, compiling "
-            "scientific intent into a concrete job for a 4-station hardware carousel: Station 1 "
-            "(Reagents - dosing/preparation), Station 2 (Process - mixing/heating), Station 3 "
-            "(Analytics - measurement targets), and Station 4 (Cleanup). Every station's "
-            "parameters must be specific, concrete numbers or descriptions - never vague "
-            "placeholders. Station 4 in particular MUST include a real, non-empty cleanup "
-            "routine description; a job without one cannot be safely deployed to physical "
-            "hardware."
+            "scientific intent into a concrete job for a 5-station hardware carousel: Station 1 "
+            "(Dosing - 5 reagents sequentially), Station 2 (Mixing - homogenization), Station 3 "
+            "(Reaction - temperature-controlled incubation), Station 4 (Fluorescence - kinetic "
+            "time series measurement), and Station 5 (Cleanup - rinse and purge). Every station's "
+            "parameters must be specific, concrete numbers - never vague placeholders. The "
+            "experiment involves a pH-sensitive fluorescence kinetics measurement of an "
+            "ascorbic acid-driven Fenton reaction with 5 reagents: ascorbic_acid, fecl3, h2o2, "
+            "fluorescein, and phosphate_buffer."
         )
 
         experiment_job = self.ask_llm(prompt=prompt, system_prompt=system_prompt, response_model=ExperimentJobModel)
@@ -390,32 +330,35 @@ class MachinePlanner(BaseAgent):
 
     def _build_planning_prompt(self, directive_text: str, theory_text: str, sim_data_text: str) -> str:
         """Assemble the full prompt: directive + theory + simulated prediction."""
-        return f"""Compile a concrete, 4-station experiment job for this cycle's hardware run.
+        return f"""Compile a concrete experiment job for this cycle's hardware run.
 
-## Global Directive (directive.md)
-```
+Global Directive (directive.md)
 {directive_text}
-```
 
-## Current Theory Baseline (theory_baseline.md)
-```
+Current Theory Baseline (theory_baseline.md)
 {theory_text}
-```
 
-## This Cycle's Simulated Prediction (A_Simulation/sim_data.csv)
-```
+This Cycle's Simulated Prediction (A_Simulation/sim_data.csv)
 {sim_data_text}
-```
 
-## Your task
-Produce a complete `ExperimentJobModel` covering all 4 carousel stations:
-- `station_1_reagents`: one or more specific reagent doses (name + volume_ml) to prepare.
-- `station_2_process`: specific mixing_speed_rpm, mixing_time_s, target_temperature_c, and
-  heating_time_s.
-- `station_3_analytics`: the measurement_type to take, any target_parameters to compare
-  against, and the sampling_interval_s.
-- `station_4_cleanup`: a REAL, non-empty cleanup_routine description (this is mandatory -
-  a job without one cannot be deployed to hardware), plus purge_time_s.
+Your task
+Produce a complete `ExperimentJobModel` for the OrbusSim Dummy V2 system:
+
+`parameters.reagents`: EXACTLY 5 reagent doses, each with:
+  - reagent_name: one of "ascorbic_acid", "fecl3", "h2o2", "fluorescein", "phosphate_buffer"
+  - volume_ul: volume in microliters (µL)
+  - concentration_mm: concentration in millimolar (mM). Note: fluorescein is typically in µM range, so use 0.01 for 10 µM.
+
+`parameters.mixing_speed_rpm`: Mixing speed in RPM (e.g. 300-800).
+`parameters.mixing_time_s`: Mixing duration in seconds (e.g. 10-30).
+`parameters.target_temperature_c`: Target temperature in Celsius (e.g. 25-60, must not exceed 75).
+`parameters.heating_time_s`: Duration for temperature ramp in seconds (e.g. 20-60).
+`parameters.measurement_interval_ms`: Measurement interval in milliseconds (50-5000, e.g. 200-500).
+`parameters.fluorescence_duration_s`: Fluorescence measurement duration in seconds (5-600, e.g. 30-60).
+`parameters.excitation_wavelength_nm`: Excitation wavelength (default 490 nm for fluorescein).
+`parameters.emission_wavelength_nm`: Emission wavelength (default 520 nm for fluorescein).
+`station_4_action`: MUST be "FLUORESCENCE".
+
 Ground every value in the directive, theory baseline, and simulated prediction above. Use
 specific numbers throughout - never vague placeholders or ranges.
 """
@@ -652,11 +595,7 @@ class SemanticSafetyAgent(BaseAgent):
 
     def _check_cleanup_routine(self, payload: dict) -> list[str]:
         """
-        STRICTLY enforce that Station 4 has a non-empty cleanup_routine.
-        This check is UNCONDITIONAL - it runs regardless of whether
-        hardware_limits.yaml exists or has anything to say about cleanup,
-        because a missing cleanup routine is a hygiene/safety issue on its
-        own terms, not something a limits file could ever waive.
+        Check that station_4_action is present and valid for the OrbusSim system.
         """
         action = payload.get("station_4_action")
         if not action or not str(action).strip():
@@ -665,39 +604,37 @@ class SemanticSafetyAgent(BaseAgent):
 
     def _check_hardware_limits(self, payload: dict, hardware_limits: dict[str, ParameterLimit]) -> list[str]:
         """
-        Check every numeric parameter this agent knows how to check against
-        its configured min/max in hardware_limits.yaml. A parameter with no
-        corresponding entry in hardware_limits (including when the whole
-        file is missing/empty) is simply not checked - see
-        `_load_hardware_limits`'s fail-safe philosophy.
-
-        Collects and returns ALL violations found, rather than stopping at
-        the first, so a human/DeadlockManager sees the complete picture.
+        Check every numeric parameter against its configured min/max in hardware_limits.yaml.
+        The new OrbusSim Dummy V2 schema uses a flat 'parameters' object instead of
+        nested station objects.
         """
         violations: list[str] = []
+        parameters = payload.get("parameters") or {}
 
-        station_2 = payload.get("station_2_process") or {}
-        for field_name in ("mixing_speed_rpm", "mixing_time_s", "target_temperature_c", "heating_time_s"):
+        # Check scalar parameters
+        for field_name in ("mixing_speed_rpm", "mixing_time_s", "target_temperature_c",
+                           "heating_time_s", "measurement_interval_ms", "fluorescence_duration_s"):
             violations.extend(
-                self._check_single_value(field_name, station_2.get(field_name), hardware_limits.get(field_name))
+                self._check_single_value(field_name, parameters.get(field_name), hardware_limits.get(field_name))
             )
 
-        station_3 = payload.get("station_3_analytics") or {}
-        violations.extend(
-            self._check_single_value(
-                "sampling_interval_s",
-                station_3.get("sampling_interval_s"),
-                hardware_limits.get("sampling_interval_s"),
-            )
-        )
-
-        station_1 = payload.get("station_1_reagents") or {}
-        reagent_volume_limit = hardware_limits.get("reagent_volume_ml")
-        for reagent in station_1.get("reagents", []) or []:
+        # Check reagent volumes and concentrations
+        reagent_volume_limit = hardware_limits.get("reagent_volume_ul")
+        reagent_concentration_limit = hardware_limits.get("reagent_concentration_mm")
+        for reagent in parameters.get("reagents", []) or []:
             reagent_name = reagent.get("reagent_name", "<unnamed>")
             violations.extend(
                 self._check_single_value(
-                    f"reagent[{reagent_name}].volume_ml", reagent.get("volume_ml"), reagent_volume_limit
+                    f"reagent[{reagent_name}].volume_ul",
+                    reagent.get("volume_ul"),
+                    reagent_volume_limit
+                )
+            )
+            violations.extend(
+                self._check_single_value(
+                    f"reagent[{reagent_name}].concentration_mm",
+                    reagent.get("concentration_mm"),
+                    reagent_concentration_limit
                 )
             )
 

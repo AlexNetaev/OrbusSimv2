@@ -361,12 +361,15 @@ a retry attempt.
 The script MUST simulate the experiment as a TIME SERIES matching the hardware output
 format. The output CSV (sim_data.csv) must have:
   - A first column representing time (e.g. "time_ms" or "time_s").
-  - One column per sensor/observable the experiment produces (e.g.
-    "ntc_thermistor_ohm", "ir_photodiode_mv", "uv_led_feedback_mA" for a
-    UV-curing experiment).
+  - One column per observable the experiment produces. For this pH-sensitive
+    fluorescence kinetics experiment, the columns are:
+    "temp_c" (temperature in Celsius) and "fluorescence_raw_au" (raw fluorescence
+    in arbitrary units).
   - At least 50 evenly-spaced time steps covering the full experiment duration.
-  - Physically plausible curves: monotonically changing signals that approach
-    a steady-state plateau, NOT random noise or static snapshots.
+  - Physically plausible curves: temperature should rise from ~22°C towards the
+    target temperature with an exponential approach. Fluorescence should start at
+    a higher value and decrease over time (pH drops, reducing fluorescein
+    fluorescence). Do NOT produce random noise or static snapshots.
 Do NOT produce a parameter sweep table, a lookup table of discrete trials, or
 static end-state values. The simulation must model HOW the observables evolve
 OVER TIME during the experiment.
