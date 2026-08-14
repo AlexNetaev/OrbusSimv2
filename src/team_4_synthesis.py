@@ -499,7 +499,8 @@ class DataAnalyst(BaseAgent):
                 "NOT an anomaly. Do NOT flag the thermal steady state as an anomaly.\n"
                 "The measurement.csv contains columns: time_ms, temp_c, fluorescence_raw_au.\n"
                 "A decreasing fluorescence_raw_au over time is EXPECTED behavior for this experiment "
-                "(pH drops, causing fluorescein fluorescence to decrease). This is NOT an anomaly.\n"
+                "(pH drops during the Fenton reaction, causing fluorescein fluorescence to decrease). "
+                "This is NOT an anomaly.\n"
                 "******************************\n"
             )
 
