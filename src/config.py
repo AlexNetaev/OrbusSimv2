@@ -127,7 +127,10 @@ DEFAULT_CONTEXT_SIZE: int = int(os.getenv("OLLAMA_CONTEXT_SIZE", "4096"))
 
 # Konfigurierbarer Timeout für wait_for_hardware(), damit das System
 # nicht unendlich hängt, wenn der externe Simulator nie schreibt.
-HARDWARE_WAIT_TIMEOUT_SECONDS: int = int(os.getenv("HARDWARE_WAIT_TIMEOUT", "600"))
+# Erhöht auf 900 Sekunden (15 Minuten) für OrbusSim Dummy V2, um ausreichend
+# Puffer für alle 5 Stationen einschließlich längerer Fluoreszenzmessungen
+# (bis zu 600 Sekunden) zu bieten.
+HARDWARE_WAIT_TIMEOUT_SECONDS: int = int(os.getenv("HARDWARE_WAIT_TIMEOUT", "900"))
 
 def all_workspace_dirs() -> list[Path]:
     """
